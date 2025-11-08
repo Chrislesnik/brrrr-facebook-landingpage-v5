@@ -68,7 +68,12 @@ const MultiStepSidebar = React.forwardRef<HTMLDivElement, MultiStepSidebarProps>
                 "linear-gradient(to right, rgb(124 164 164 / 0.12), rgb(58 107 157 / 0.12))",
             }}
           >
-            <div className="flex justify-center px-6">
+            <div className="flex flex-col items-center gap-2 px-6">
+              <img
+                alt="Vyral PEO"
+                className="h-8 w-auto"
+                src={logoUrl}
+              />
               {/* Mobile Rotating Highlights */}
               <HighlightsRotator items={highlights} />
             </div>
