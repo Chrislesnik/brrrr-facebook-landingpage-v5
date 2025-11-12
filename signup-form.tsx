@@ -8,6 +8,7 @@ import states from "./states";
 import {cn} from "@heroui/react";
 import {ButtonWithBorderGradient} from "./button-with-border-gradient";
 import {LazyMotion, domAnimation, m, AnimatePresence} from "framer-motion";
+import {loadGoogleMaps} from "./google-maps-loader";
 
 export type SignUpFormProps = React.HTMLAttributes<HTMLFormElement>;
 
@@ -32,6 +33,15 @@ const SignUpForm = React.forwardRef<HTMLFormElement, SignUpFormProps>(
     const [pricingErrors, setPricingErrors] = React.useState<string[]>([]);
     const [zip, setZip] = React.useState("");
     const termsRef = React.useRef<HTMLDivElement>(null);
+    const [selectedStateKey, setSelectedStateKey] = React.useState<string>("");
+    const [cityValue, setCityValue] = React.useState<string>("");
+    const [streetValue, setStreetValue] = React.useState<string>("");
+    const [placePredictions, setPlacePredictions] = React.useState<any[]>([]);
+    const [showPredictions, setShowPredictions] = React.useState<boolean>(false);
+    const placesServiceRef = React.useRef<any | null>(null);
+    const autocompleteServiceRef = React.useRef<any | null>(null);
+    const sessionTokenRef = React.useRef<any | null>(null);
+    const debounceTimerRef = React.useRef<number | null>(null);
 
     const inputProps: Pick<InputProps, "labelPlacement" | "classNames"> = {
       labelPlacement: "outside",
@@ -213,6 +223,131 @@ const SignUpForm = React.forwardRef<HTMLFormElement, SignUpFormProps>(
       const digits = e.target.value.replace(/\D/g, "").slice(0, 5);
       setZip(digits);
     };
+
+    // Load Google Maps Places and prepare services (custom UI)
+    React.useEffect(() => {
+      const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
+      if (!apiKey) return; // no key set, skip
+      let isMounted = true;
+
+      loadGoogleMaps(apiKey)
+        .then((google) => {
+          if (!isMounted) return;
+          autocompleteServiceRef.current = new google.maps.places.AutocompleteService();
+          placesServiceRef.current = new google.maps.places.PlacesService(document.createElement("div"));
+          sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+        })
+        .catch(() => {
+          // ignore loader errors; UI still works without autocomplete
+        });
+
+      return () => {
+        isMounted = false;
+      };
+    }, []);
+
+    // Fetch place predictions with debounce
+    const fetchPredictions = React.useCallback(
+      (value: string) => {
+        if (!autocompleteServiceRef.current || !value.trim()) {
+          setPlacePredictions([]);
+          setShowPredictions(false);
+          return;
+        }
+        autocompleteServiceRef.current.getPlacePredictions(
+          {
+            input: value,
+            types: ["address"],
+            sessionToken: sessionTokenRef.current || undefined,
+          },
+          (preds: any) => {
+            setPlacePredictions(preds || []);
+            setShowPredictions(Boolean(preds && preds.length));
+          },
+        );
+      },
+      [],
+    );
+
+    const onStreetInputChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+      const val = e.target.value;
+      setStreetValue(val);
+      if (debounceTimerRef.current) window.clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = window.setTimeout(() => fetchPredictions(val), 180);
+    };
+
+    const selectPrediction = (prediction: any) => {
+      // Use Places Details to get components
+      const placesService = placesServiceRef.current;
+      if (!placesService) return;
+      placesService.getDetails(
+        {
+          placeId: prediction.place_id,
+          sessionToken: sessionTokenRef.current || undefined,
+          fields: ["address_components"],
+        },
+        (place: any) => {
+          if (!place || !(place as any).address_components) {
+            // fallback to description if no details
+            setStreetValue(prediction.description);
+            setShowPredictions(false);
+            return;
+          }
+          const components: any[] = (place as any).address_components || [];
+          const getComponent = (type: string, short = true) => {
+            const comp = components.find((c) => c.types.includes(type));
+            return comp ? (short ? comp.short_name : comp.long_name) : "";
+          };
+          const streetNumber = getComponent("street_number");
+          const route = getComponent("route", false);
+          const city =
+            getComponent("locality", false) ||
+            getComponent("sublocality", false) ||
+            getComponent("administrative_area_level_2", false);
+          const stateAbbr = getComponent("administrative_area_level_1");
+          const postal = getComponent("postal_code");
+
+          const streetCombined = `${streetNumber} ${route}`.trim();
+          setStreetValue(streetCombined || prediction.description);
+
+          // Update related inputs
+          const setInput = (name: string, value: string) => {
+            const el = formRef.current?.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+            if (el) {
+              el.value = value;
+              el.dispatchEvent(new Event("input", {bubbles: true}));
+              el.dispatchEvent(new Event("change", {bubbles: true}));
+            }
+          };
+          setCityValue(city);
+          setZip(postal);
+          if (stateAbbr) {
+            const match = states.find((st) => abbreviateUsState(st.title) === stateAbbr);
+            if (match) setSelectedStateKey(match.value);
+          }
+
+          setShowPredictions(false);
+          setPlacePredictions([]);
+          // Refresh session token for next interaction
+          if (sessionTokenRef.current) {
+            sessionTokenRef.current = new (window as any).google.maps.places.AutocompleteSessionToken();
+          }
+        },
+      );
+    };
+
+    // Close suggestions when clicking outside
+    React.useEffect(() => {
+      const onDocClick = (e: MouseEvent) => {
+        const root = document.getElementById("street-autocomplete-root");
+        if (!root) return;
+        if (!root.contains(e.target as Node)) {
+          setShowPredictions(false);
+        }
+      };
+      document.addEventListener("mousedown", onDocClick);
+      return () => document.removeEventListener("mousedown", onDocClick);
+    }, []);
 
     const clampNonNegative: React.ChangeEventHandler<HTMLInputElement> = (e) => {
       const n = Number(e.target.value);
@@ -531,14 +666,39 @@ const SignUpForm = React.forwardRef<HTMLFormElement, SignUpFormProps>(
             {...inputProps}
           />
 
-          <Input
-            className="col-span-12 md:col-span-8"
+          <div className="relative col-span-12 md:col-span-8" id="street-autocomplete-root">
+            <Input
+              className="w-full"
             label={<Required text="Street" />}
             name="street"
             placeholder="123 Main St"
             required
-            {...inputProps}
-          />
+              value={streetValue}
+              onChange={onStreetInputChange}
+              onFocus={() => setShowPredictions(placePredictions.length > 0)}
+              {...inputProps}
+            />
+            {showPredictions && placePredictions.length > 0 && (
+              <div
+                className="absolute z-50 mt-1 w-full rounded-large border border-default-200 bg-background shadow-large max-h-72 overflow-auto left-0"
+                role="listbox"
+                aria-label="Address suggestions"
+              >
+                {placePredictions.map((p) => (
+                  <button
+                    key={p.place_id}
+                    type="button"
+                    onClick={() => selectPrediction(p)}
+                    className="w-full text-left px-3 py-2 hover:bg-content3 focus:bg-content3 outline-none"
+                  >
+                    <div className="text-sm text-default-800">{p.structured_formatting.main_text}</div>
+                    <div className="text-xs text-default-500">{p.structured_formatting.secondary_text}</div>
+                  </button>
+                ))}
+                <div className="px-3 py-1 text-[10px] text-default-500">Powered by Google</div>
+              </div>
+            )}
+          </div>
           <Input
             className="col-span-12 md:col-span-4"
             label="Apt #"
@@ -552,6 +712,8 @@ const SignUpForm = React.forwardRef<HTMLFormElement, SignUpFormProps>(
             name="city"
             placeholder="San Francisco"
             required
+            value={cityValue}
+            onChange={(e) => setCityValue(e.target.value)}
             {...inputProps}
           />
           <Select
@@ -560,6 +722,8 @@ const SignUpForm = React.forwardRef<HTMLFormElement, SignUpFormProps>(
             name="state"
             placeholder="Select state"
             required
+            selectedKeys={selectedStateKey ? [selectedStateKey] : []}
+            onChange={(e) => setSelectedStateKey((e.target as HTMLSelectElement).value)}
             {...selectProps}
           >
             {states.map((st) => (
