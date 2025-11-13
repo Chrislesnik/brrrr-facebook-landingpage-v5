@@ -6,7 +6,8 @@ import {domAnimation, LazyMotion, m} from "framer-motion";
 import MultistepSidebar from "./multistep-sidebar";
 import {ButtonWithBorderGradient} from "./button-with-border-gradient";
 import {Modal, ModalBody, ModalContent, ModalFooter, ModalHeader, Input, Button} from "@heroui/react";
-import cheatsheetPdfUrl from "./Real Estate Investor’s Refi Cheat Sheet.pdf";
+import calculatorXlsxUrl from "./Fix & Flip - Economics Calculator.xlsx";
+import calculatorPreviewImg from "./profitability-calculator.png";
 
 const variants = {
   enter: (direction: number) => ({
@@ -70,7 +71,7 @@ export default function AppLeadMagnet() {
   }, []);
 
   const startDownload = React.useCallback(() => {
-    const target = downloadUrl || cheatsheetPdfUrl;
+    const target = downloadUrl || calculatorXlsxUrl;
     try {
       if (target) window.open(target, "_blank");
     } catch {
@@ -92,7 +93,7 @@ export default function AppLeadMagnet() {
     try {
       // Send webhook
       try {
-        await fetch("https://n8n.axora.info/webhook/a7036a73-bda9-4c7f-b2fd-c320d044ccc7", {
+        await fetch("https://n8n.axora.info/webhook/e9557a69-7e4f-4dee-87ca-1a26166b5aef", {
           method: "POST",
           headers: {"Content-Type": "application/json"},
           body: JSON.stringify({
@@ -156,12 +157,12 @@ export default function AppLeadMagnet() {
             }}
             variants={variants}
           >
-            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-3">
               <div className="text-default-foreground text-3xl leading-9 font-bold">
-                Get Your Free Refi Cheatsheet
+                Get Your Free Fix &amp; Flip Calculator
               </div>
               <div className="text-default-500 -mt-1">
-                Quick-reference PDF to help you navigate refinance deals with confidence.
+                Excel profitability calculator to quickly analyze your Fix &amp; Flip deals.
               </div>
 
               <div
@@ -172,15 +173,12 @@ export default function AppLeadMagnet() {
                 }}
               >
                 <div className="aspect-[3/4] w-full max-w-[260px] sm:max-w-[320px] md:max-w-[360px] mx-auto rounded-medium border border-default-200 overflow-hidden bg-content2/60">
-                  <iframe
-                    src={
-                      cheatsheetPdfUrl +
-                      "#page=1&view=FitH&zoom=page-width&toolbar=0&navpanes=0&scrollbar=0"
-                    }
-                    title="Refi Cheatsheet Preview"
-                    className="w-full h-full pointer-events-none"
-                    scrolling="no"
+                  <img
+                    src={calculatorPreviewImg}
+                    alt="Fix & Flip Calculator preview"
+                    className="w-full h-full object-contain pointer-events-none"
                     style={{filter: "blur(1.5px)"}}
+                    draggable={false}
                   />
                 </div>
               </div>
@@ -191,7 +189,7 @@ export default function AppLeadMagnet() {
                   className="text-medium font-medium"
                   onClick={onClickDownload}
                 >
-                  Download Cheatsheet
+                  Download Calculator
                 </ButtonWithBorderGradient>
               </div>
             </div>
@@ -202,7 +200,7 @@ export default function AppLeadMagnet() {
             {(onClose) => (
               <>
                 <ModalHeader className="flex flex-col gap-1">
-                  Get the Cheatsheet
+                  Get the Calculator
                 </ModalHeader>
                 <ModalBody>
                   <div className="text-default-500 -mt-1 mb-1">
